@@ -94,6 +94,7 @@ type Configuration struct {
 	SyncRateLimit float32
 
 	DynamicConfigurationEnabled bool
+	ABTestingEnabled            bool
 
 	DisableLua bool
 
@@ -127,11 +128,12 @@ func (n *NGINXController) syncIngress(interface{}) error {
 		jr := ings[j].ResourceVersion
 		return ir < jr
 	})
-
+	abtestingCfg, canaryUpstreams := n.getABTestingConfig(ings)
 	upstreams, servers := n.getBackendServers(ings)
 	var passUpstreams []*ingress.SSLPassthroughBackend
 
 	hosts := sets.NewString()
+	upstreams = append(upstreams, canaryUpstreams...)
 
 	for _, server := range servers {
 		if !hosts.Has(server.Hostname) {
@@ -164,6 +166,7 @@ func (n *NGINXController) syncIngress(interface{}) error {
 		UDPEndpoints:          n.getStreamServices(n.cfg.UDPConfigMapName, apiv1.ProtocolUDP),
 		PassthroughBackends:   passUpstreams,
 		BackendConfigChecksum: n.store.GetBackendConfiguration().Checksum,
+		ABTestingCfg:          abtestingCfg,
 	}
 
 	if n.runningConfig.Equal(pcfg) {
@@ -213,6 +216,14 @@ func (n *NGINXController) syncIngress(interface{}) error {
 			} else {
 				glog.Warningf("Dynamic reconfiguration failed: %v", err)
 			}
+			if n.cfg.ABTestingEnabled {
+				err := configureABTesting(pcfg, n.cfg.ListenPorts.Status)
+				if err == nil {
+					glog.Infof("ABTesting reconfiguration succeeded.")
+				} else {
+					glog.Warningf("ABTesting reconfiguration failed: %v", err)
+				}
+			}
 		}(isFirstSync)
 	}
 
@@ -221,7 +232,6 @@ func (n *NGINXController) syncIngress(interface{}) error {
 	n.metricCollector.RemoveMetrics(ri, re)
 
 	n.runningConfig = pcfg
-
 	return nil
 }
 
@@ -384,6 +394,115 @@ func (n *NGINXController) getDefaultUpstream() *ingress.Backend {
 	upstream.Service = svc
 	upstream.Endpoints = append(upstream.Endpoints, endps...)
 	return upstream
+}
+
+func (n *NGINXController) getABTestingConfig(ingresses []*extensions.Ingress) (map[string]*ingress.ABTestingSingleConfig, []*ingress.Backend) {
+	results := make(map[string]*ingress.ABTestingSingleConfig)
+	upstreams := make([]*ingress.Backend, 0)
+
+	for _, ing := range ingresses {
+		ingKey := k8s.MetaNamespaceKey(ing)
+
+		anns, err := n.store.GetIngressAnnotations(ingKey)
+		if err != nil {
+			glog.Errorf("Error getting Ingress annotations %q: %v", ingKey, err)
+		}
+
+		if anns == nil || anns.ABTesting == nil{
+			continue
+		}
+
+		defBackend := fmt.Sprintf("%v-%v-%v",
+			ing.Namespace,
+			anns.ABTesting.Backend.ServiceName,
+			anns.ABTesting.Backend.ServicePort)
+
+		glog.V(3).Infof("Creating upstream %q", defBackend)
+		up := newUpstream(defBackend)
+		if !up.Secure {
+			up.Secure = anns.SecureUpstream.Secure
+		}
+		if up.SecureCACert.Secret == "" {
+			up.SecureCACert = anns.SecureUpstream.CACert
+		}
+		if up.UpstreamHashBy == "" {
+			up.UpstreamHashBy = anns.UpstreamHashBy
+		}
+		if up.LoadBalancing == "" {
+			up.LoadBalancing = anns.LoadBalancing
+		}
+
+		svcKey := fmt.Sprintf("%v/%v", ing.Namespace, anns.ABTesting.Backend.ServiceName)
+
+		// add the service ClusterIP as a single Endpoint instead of individual Endpoints
+		if anns.ServiceUpstream {
+			bd := &extensions.IngressBackend{
+				ServiceName:anns.ABTesting.Backend.ServiceName,
+				ServicePort: intstr.FromInt(anns.ABTesting.Backend.ServicePort),
+			}
+			endpoint, err := n.getServiceClusterEndpoint(svcKey, bd)
+			if err != nil {
+				glog.Errorf("Failed to determine a suitable ClusterIP Endpoint for Service %q: %v", svcKey, err)
+			} else {
+				up.Endpoints = []ingress.Endpoint{endpoint}
+			}
+		}
+
+		if len(up.Endpoints) == 0 {
+			endps, err := n.serviceEndpoints(svcKey, strconv.Itoa(anns.ABTesting.Backend.ServicePort), &anns.HealthCheck)
+			up.Endpoints = append(up.Endpoints, endps...)
+			if err != nil {
+				glog.Warningf("Error creating upstream %q: %v", defBackend, err)
+			}
+		}
+		// when canary release has no active endpoints, we just ignore the ABTesting
+		if len(up.Endpoints) == 0 {
+			continue
+		}
+		upstreams = append(upstreams, up)
+
+		for name, rule := range anns.ABTesting.Rules {
+			rules := make(map[string]ingress.ABTestingRule)
+			r1Args := ingress.ABTestingRuleArgs{
+				Op:      rule.Op,
+				OpArgs:  rule.OpArgs,
+				GetArgs: rule.GetArgs,
+				Success: "r2",
+				Fail:    "r3",
+			}
+			r1 := ingress.ABTestingRule{
+				Type: rule.Type,
+				Args: r1Args,
+			}
+			rules["r1"] = r1
+			// success backend rule
+			// if the request matched the rule, then it will redirect to CANARY pods
+			r2Args := ingress.ABTestingRuleArgs{
+				ServerName: "{CANARY}",
+			}
+			r2 := ingress.ABTestingRule{
+				Type: "backend",
+				Args: r2Args,
+			}
+			rules["r2"] = r2
+			//fail backend rule
+			r3Args := ingress.ABTestingRuleArgs{
+				ServerName: "{DEFAULT}",
+			}
+			r3 := ingress.ABTestingRule{
+				Type: "backend",
+				Args: r3Args,
+			}
+			rules["r3"] = r3
+
+			results[name] = &ingress.ABTestingSingleConfig{
+				Init:  "r1",
+				Rules: rules,
+			}
+		}
+	}
+
+	return results, upstreams
 }
 
 // getBackendServers returns a list of Upstream and Server to be used by the

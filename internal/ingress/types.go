@@ -69,6 +69,9 @@ type Configuration struct {
 
 	// ConfigurationChecksum contains the particular checksum of a Configuration object
 	ConfigurationChecksum string `json:"configurationChecksum,omitempty"`
+
+	// ABTesting related config
+	ABTestingCfg   map[string]*ABTestingSingleConfig  `json:"abtesting,omitempty"`
 }
 
 // Backend describes one or more remote server/s (endpoints) associated with a service
@@ -101,6 +104,26 @@ type Backend struct {
 // HashInclude defines if a field should be used or not to calculate the hash
 func (s Backend) HashInclude(field string, v interface{}) (bool, error) {
 	return (field != "Endpoints"), nil
+}
+
+// ABTesting related types
+type ABTestingRuleArgs struct {
+	Op         string      `json:"op,omitempty"`
+	OpArgs     interface{} `json:"op_args,omitempty"`
+	GetArgs    interface{} `json:"get_args,omitempty"`
+	Fail       string      `json:"fail,omitempty"`
+	Success    string      `json:"succ,omitempty"`
+	ServerName string      `json:"servername,omitempty"`
+}
+
+type ABTestingRule struct {
+	Type       string      `json:"type"`
+	Args       ABTestingRuleArgs `json:"args"`
+}
+
+type ABTestingSingleConfig struct {
+	Init string  `json:"init"`
+	Rules map[string]ABTestingRule `json:"rules"`
 }
 
 // SessionAffinityConfig describes different affinity configurations for new sessions.

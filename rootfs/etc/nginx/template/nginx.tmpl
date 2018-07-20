@@ -50,7 +50,7 @@ http {
     lua_package_cpath "/usr/local/lib/lua/?.so;/usr/lib/lua-platform-path/lua/5.1/?.so;;";
     lua_package_path "/etc/nginx/lua/?.lua;/etc/nginx/lua/vendor/?.lua;/usr/local/lib/lua/?.lua;;";
 
-    {{ buildLuaSharedDictionaries $servers $all.DynamicConfigurationEnabled $all.Cfg.DisableLuaRestyWAF }}
+    {{ buildLuaSharedDictionaries $servers $all.DynamicConfigurationEnabled $all.ABTestingEnabled $all.Cfg.DisableLuaRestyWAF }}
 
     init_by_lua_block {
         require("resty.core")
@@ -77,6 +77,24 @@ http {
         else
           balancer = res
         end
+
+        {{ if $all.ABTestingEnabled }}
+
+        ok, res = pcall(require, "abtesting")
+        if not ok then
+          error("require failed: " .. tostring(res))
+        else
+          abtesting = res
+        end
+
+        ok, res = pcall(require, "api.abtesting")
+        if not ok then
+          error("require failed: " .. tostring(res))
+        else
+          abtesting_api = res
+        end
+        {{ end }}
+
         {{ end }}
 
         ok, res = pcall(require, "monitor")
@@ -98,6 +116,11 @@ http {
 
     {{ if $all.DynamicConfigurationEnabled }}
     init_worker_by_lua_block {
+
+        {{ if $all.ABTestingEnabled }}
+        abtesting.init_worker()
+        {{ end }}
+        
         balancer.init_worker()
         monitor.init_worker()
     }
@@ -440,6 +463,7 @@ http {
         server 0.0.0.1; # placeholder
 
         balancer_by_lua_block {
+
           balancer.balance()
         }
 
@@ -669,6 +693,30 @@ http {
               configuration.call()
             }
         }
+
+        {{ if $all.ABTestingEnabled }}
+        location /abtesting {
+            access_log off;
+            {{ if $cfg.EnableOpentracing }}
+            opentracing off;
+            {{ end }}
+
+            allow 127.0.0.1;
+            {{ if $IsIPV6Enabled }}
+            allow ::1;
+            {{ end }}
+            deny all;
+
+            # this should be equals to configuration_data dict
+            client_max_body_size                    "10m";
+            proxy_buffering                         off;
+
+            content_by_lua_block {
+              abtesting_api.call()
+            }
+        }
+        {{ end }}
+
         {{ end }}
         location / {
             {{ if .CustomErrors }}
@@ -979,6 +1027,11 @@ stream {
             {{ if not $all.DisableLua }}
             rewrite_by_lua_block {
                 {{ if $all.DynamicConfigurationEnabled}}
+
+                {{ if $all.ABTestingEnabled }}
+                abtesting.route()
+                {{ end }}
+
                 balancer.rewrite()
                 {{ end }}
             }

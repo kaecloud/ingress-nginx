@@ -359,11 +359,11 @@ func TestBuildLuaSharedDictionaries(t *testing.T) {
 		},
 	}
 
-	config := buildLuaSharedDictionaries(servers, false, false)
+	config := buildLuaSharedDictionaries(servers, false, false, false)
 	if config != "" {
 		t.Errorf("expected to not configure any lua shared dictionary, but generated %s", config)
 	}
-	config = buildLuaSharedDictionaries(servers, true, false)
+	config = buildLuaSharedDictionaries(servers, true, false, false)
 	if !strings.Contains(config, "lua_shared_dict configuration_data") {
 		t.Errorf("expected to include 'configuration_data' but got %s", config)
 	}
@@ -372,16 +372,16 @@ func TestBuildLuaSharedDictionaries(t *testing.T) {
 	}
 
 	servers[1].Locations[0].LuaRestyWAF = luarestywaf.Config{Mode: "ACTIVE"}
-	config = buildLuaSharedDictionaries(servers, false, false)
+	config = buildLuaSharedDictionaries(servers, false, false,false)
 	if !strings.Contains(config, "lua_shared_dict waf_storage") {
 		t.Errorf("expected to configure 'waf_storage', but got %s", config)
 	}
-	config = buildLuaSharedDictionaries(servers, true, false)
+	config = buildLuaSharedDictionaries(servers, true, false, false)
 	if !strings.Contains(config, "lua_shared_dict waf_storage") {
 		t.Errorf("expected to configure 'waf_storage', but got %s", config)
 	}
 
-	config = buildLuaSharedDictionaries(servers, false, true)
+	config = buildLuaSharedDictionaries(servers, false, false, true)
 	if config != "" {
 		t.Errorf("expected to not configure any lua shared dictionary, but generated %s", config)
 	}

@@ -706,6 +706,7 @@ type TemplateConfig struct {
 	PublishService              *apiv1.Service
 	DynamicConfigurationEnabled bool
 	DynamicCertificatesEnabled  bool
+	ABTestingEnabled            bool
 	DisableLua                  bool
 }
 

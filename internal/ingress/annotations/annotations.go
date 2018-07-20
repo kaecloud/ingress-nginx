@@ -58,6 +58,7 @@ import (
 	"k8s.io/ingress-nginx/internal/ingress/annotations/xforwardedprefix"
 	"k8s.io/ingress-nginx/internal/ingress/errors"
 	"k8s.io/ingress-nginx/internal/ingress/resolver"
+	"k8s.io/ingress-nginx/internal/ingress/annotations/abtesting"
 )
 
 // DeniedKeyName name of the key that contains the reason to deny a location
@@ -98,6 +99,7 @@ type Ingress struct {
 	GRPC                 bool
 	LuaRestyWAF          luarestywaf.Config
 	InfluxDB             influxdb.Config
+	ABTesting            *abtesting.Config
 }
 
 // Extractor defines the annotation parsers to be used in the extraction of annotations
@@ -109,6 +111,7 @@ type Extractor struct {
 func NewAnnotationExtractor(cfg resolver.Resolver) Extractor {
 	return Extractor{
 		map[string]parser.IngressAnnotation{
+			"ABTesting":            abtesting.NewParser(cfg),
 			"Alias":                alias.NewParser(cfg),
 			"BasicDigestAuth":      auth.NewParser(auth.AuthDirectory, cfg),
 			"CertificateAuth":      authtls.NewParser(cfg),

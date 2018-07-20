@@ -16,6 +16,10 @@ limitations under the License.
 
 package ingress
 
+import (
+	"reflect"
+)
+
 // Equal tests for equality between two Configuration types
 func (c1 *Configuration) Equal(c2 *Configuration) bool {
 	if c1 == c2 {
@@ -108,6 +112,53 @@ func (c1 *Configuration) Equal(c2 *Configuration) bool {
 		return false
 	}
 
+	if len(c1.ABTestingCfg) != len(c2.ABTestingCfg) {
+		return false
+	}
+	for name, cfg1 := range c1.ABTestingCfg {
+		cfg2, ok := c2.ABTestingCfg[name]
+		if !ok {
+			return false
+		}
+		if !cfg1.Equal(cfg2) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (cfg1 *ABTestingSingleConfig) Equal(cfg2 *ABTestingSingleConfig) bool {
+	if cfg1 == cfg2 {
+		return true
+	}
+	if cfg1 == nil || cfg2 == nil {
+		return false
+	}
+	if cfg1.Init != cfg2.Init {
+		return false
+	}
+	for name, rule1 := range cfg1.Rules {
+		rule2, ok := cfg2.Rules[name]
+		if !ok {
+			return false
+		}
+		if rule1.Type != rule2.Type {
+			return false
+		}
+		if rule1.Args.Op != rule2.Args.Op ||
+			rule1.Args.Fail != rule2.Args.Fail ||
+			rule1.Args.Success != rule2.Args.Success ||
+			rule1.Args.ServerName != rule2.Args.ServerName {
+				return false
+		}
+		if ! reflect.DeepEqual(rule1.Args.GetArgs, rule2.Args.GetArgs) {
+			return false
+		}
+		if ! reflect.DeepEqual(rule1.Args.OpArgs, rule2.Args.OpArgs) {
+			return false
+		}
+	}
 	return true
 }
 

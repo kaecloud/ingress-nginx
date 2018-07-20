@@ -594,6 +594,7 @@ func (n *NGINXController) OnUpdate(ingressCfg ingress.Configuration) error {
 		PublishService:              n.GetPublishService(),
 		DynamicConfigurationEnabled: n.cfg.DynamicConfigurationEnabled,
 		DynamicCertificatesEnabled:  n.cfg.DynamicCertificatesEnabled,
+		ABTestingEnabled:            n.cfg.ABTestingEnabled,
 		DisableLua:                  n.cfg.DisableLua,
 	}
 
@@ -750,6 +751,8 @@ func (n *NGINXController) IsDynamicConfigurationEnough(pcfg *ingress.Configurati
 		clearCertificates(&copyOfRunningConfig)
 		clearCertificates(&copyOfPcfg)
 	}
+	copyOfRunningConfig.ABTestingCfg = map[string]*ingress.ABTestingSingleConfig{}
+	copyOfPcfg.ABTestingCfg = map[string]*ingress.ABTestingSingleConfig{}
 
 	return copyOfRunningConfig.Equal(&copyOfPcfg)
 }
@@ -851,6 +854,34 @@ func post(url string, data interface{}) error {
 		return fmt.Errorf("unexpected error code: %d", resp.StatusCode)
 	}
 
+	return nil
+}
+
+// configureABTesting encodes new Rule in JSON format and POSTs the
+// payload to an internal HTTP endpoint handled by Lua.
+func configureABTesting(pcfg *ingress.Configuration, port int) error {
+	buf, err := json.Marshal(pcfg.ABTestingCfg)
+	if err != nil {
+		return err
+	}
+
+	glog.V(2).Infof("Posting abtesting configuration: %s", buf)
+
+	url := fmt.Sprintf("http://localhost:%d/abtesting", port)
+	resp, err := http.Post(url, "application/json", bytes.NewReader(buf))
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			glog.Warningf("Error while closing response body:\n%v", err)
+		}
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Unexpected error code: %d", resp.StatusCode)
+	}
 	return nil
 }
 

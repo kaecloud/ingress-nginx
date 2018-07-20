@@ -183,7 +183,7 @@ func shouldConfigureLuaRestyWAF(disableLuaRestyWAF bool, mode string) bool {
 	return false
 }
 
-func buildLuaSharedDictionaries(s interface{}, dynamicConfigurationEnabled bool, disableLuaRestyWAF bool) string {
+func buildLuaSharedDictionaries(s interface{}, dynamicConfigurationEnabled bool, abtestingEnabled bool, disableLuaRestyWAF bool) string {
 	servers, ok := s.([]*ingress.Server)
 	if !ok {
 		glog.Errorf("expected an '[]*ingress.Server' type but %T was returned", s)
@@ -201,6 +201,9 @@ func buildLuaSharedDictionaries(s interface{}, dynamicConfigurationEnabled bool,
 			"lua_shared_dict balancer_ewma_last_touched_at 1M",
 			"lua_shared_dict sticky_sessions 1M",
 		)
+		if abtestingEnabled {
+			out = append(out, "lua_shared_dict rules 20M")
+		}
 	}
 
 	if !disableLuaRestyWAF {

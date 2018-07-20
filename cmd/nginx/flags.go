@@ -146,6 +146,9 @@ Requires the update-status parameter.`)
 		dynamicConfigurationEnabled = flags.Bool("enable-dynamic-configuration", true,
 			`Dynamically refresh backends on topology changes instead of reloading NGINX.
 Feature backed by OpenResty Lua libraries.`)
+		abtestingEnabled = flags.Bool("enable-abtesting", false,
+			`enable ABTesting.
+Feature backed by OpenResty Lua libraries.`)
 
 		dynamicCertificatesEnabled = flags.Bool("enable-dynamic-certificates", false,
 			`Dynamically update SSL certificates instead of reloading NGINX.
@@ -218,6 +221,11 @@ Feature backed by OpenResty Lua libraries. Requires that OCSP stapling is not en
 dynamic certificates functionality is enabled. Please check the flags --enable-ssl-chain-completion and --enable-dynamic-configuration`)
 	}
 
+	if  !*dynamicConfigurationEnabled && *abtestingEnabled {
+		return false, nil, fmt.Errorf(`ABTesting cannot be enabled when dynamic configration is disabled,
+Please check the flags --enable-abtesting and --enable-dynamic-configuration`)
+	}
+
 	// LuaJIT is not available on arch s390x and ppc64le
 	disableLua := false
 	if runtime.GOARCH == "s390x" || runtime.GOARCH == "ppc64le" {
@@ -252,6 +260,7 @@ dynamic certificates functionality is enabled. Please check the flags --enable-s
 		UseNodeInternalIP:           *useNodeInternalIP,
 		SyncRateLimit:               *syncRateLimit,
 		DynamicConfigurationEnabled: *dynamicConfigurationEnabled,
+		ABTestingEnabled:            *abtestingEnabled,
 		DisableLua:                  disableLua,
 		DynamicCertificatesEnabled:  *dynamicCertificatesEnabled,
 		ListenPorts: &ngx_config.ListenPorts{
